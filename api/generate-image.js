@@ -1,46 +1,39 @@
-import fetch from "node-fetch";
+import fetch from 'node-fetch';
 
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  if (req.method !== 'POST') {
+    return res.status(405).json({ ok: false, error: 'Method not allowed' });
+  }
 
-  if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  const { prompt, style, ratio, captionTone } = req.body || {};
+  const OPENAI_KEY = process.env.OPENAI_API_KEY || 'DUMMY';
+
+  // Mode Dummy
+  if (OPENAI_KEY === 'DUMMY') {
+    const mockImage = 'https://images.unsplash.com/photo-1581093588401-22db0d8a6d59?w=800';
+    const mockCaption = `✨ [Mock Mode] ${captionTone} — Gambar bertema ${style} (${ratio}).\n${prompt}`;
+    return res.status(200).json({ ok: true, image: mockImage, caption: mockCaption });
+  }
 
   try {
-    const { prompt, size = "1024x1024" } = req.body || {};
-    if (!prompt) return res.status(400).json({ error: "Missing prompt" });
-
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) return res.status(500).json({ error: "API key missing" });
-
-    const response = await fetch("https://api.openai.com/v1/images/generations", {
-      method: "POST",
+    const r = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
+        'Authorization': `Bearer ${OPENAI_KEY}`,
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         model: "gpt-image-1",
-        prompt,
-        size,
-        n: 1,
-        response_format: "b64_json"
+        prompt: `${prompt}, style: ${style}`,
+        size: ratio === '1:1' ? '1024x1024' : '1024x1536'
       })
     });
 
-    const data = await response.json();
-    if (!response.ok) {
-      return res.status(response.status).json({
-        error: data.error?.message || "Image generation failed"
-      });
-    }
-
-    const b64 = data?.data?.[0]?.b64_json;
-    return res.status(200).json({ image_b64: b64 });
-  } catch (error) {
-    console.error("Error:", error);
-    return res.status(500).json({ error: "Internal Server Error" });
+    const data = await r.json();
+    const imageUrl = data?.data?.[0]?.url || null;
+    const caption = `✨ ${captionTone} — ${prompt}`;
+    return res.status(200).json({ ok: true, image: imageUrl, caption });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: 'Failed to generate image' });
   }
 }
